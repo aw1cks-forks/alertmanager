@@ -23,7 +23,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
@@ -47,13 +46,16 @@ type Notifier struct {
 	postJSONFunc func(ctx context.Context, client *http.Client, url string, body io.Reader) (*http.Response, error)
 }
 
-// Message card reference can be found at https://learn.microsoft.com/en-us/outlook/actionable-messages/message-card-reference.
+// Adaptive card reference can be found at https://learn.microsoft.com/en-us/power-automate/overview-adaptive-cards
 type teamsMessage struct {
-	Context    string `json:"@context"`
-	Type       string `json:"type"`
-	Title      string `json:"title"`
-	Text       string `json:"text"`
-	ThemeColor string `json:"themeColor"`
+	Type        string                   `json:"type"`
+	Attachments *teamsMessageAttachments `json:"attachments"`
+}
+
+type teamsMessageAttachments struct {
+	ContentType string           `json:"contentType"`
+	Content     *json.RawMessage `json:"content"`
+	//ContentURL  string        `json:"contentUrl"`
 }
 
 // New returns a new notifier that uses the Microsoft Teams Webhook API.
@@ -90,30 +92,19 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		return false, err
 	}
 
-	title := tmpl(n.conf.Title)
-	if err != nil {
-		return false, err
-	}
 	text := tmpl(n.conf.Text)
 	if err != nil {
 		return false, err
 	}
 
-	alerts := types.Alerts(as...)
-	color := colorGrey
-	switch alerts.Status() {
-	case model.AlertFiring:
-		color = colorRed
-	case model.AlertResolved:
-		color = colorGreen
-	}
+	textJson := json.RawMessage(text)
 
 	t := teamsMessage{
-		Context:    "http://schema.org/extensions",
-		Type:       "MessageCard",
-		Title:      title,
-		Text:       text,
-		ThemeColor: color,
+		Type: "message",
+		Attachments: &teamsMessageAttachments{
+			ContentType: "application/vnd.microsoft.card.adaptive",
+			Content:     &textJson,
+		},
 	}
 
 	var payload bytes.Buffer
